@@ -1,24 +1,36 @@
-# covid_nursing_homes.R
+library(httr)
+library(jsonlite)
 library(tidyverse)
 library(janitor)
 library(lubridate)
 library(gt)
 library(here)
 
-nurs_home <- read_csv(file = paste0(
-  "G:\\My Drive\\ForSue\\covid\\",
-  "COVID-19 Nursing Home Data\\2024-03-10\\",
-  "COVID-19 Nursing Home Data 03.10.2024.csv"
-)) %>%
+res <- GET(url = "https://data.cms.gov/data.json")
+res
+toc <- fromJSON(rawToChar(res$content))
+names(toc)
+df <- as.data.frame(toc$dataset) %>%
+  filter(title == "COVID-19 Nursing Home Data")
+glimpse(df)
+
+glimpse(as.data.frame(df$distribution)$description)
+colnames(as.data.frame(df$distribution))
+tabyl(as.data.frame(df$distribution)$mediaType)
+
+filter(as.data.frame(df$distribution), mediaType == "text/csv") %>%
+  select(downloadURL)
+
+nurs_home <-
+  read_csv(file = 
+             as.character(filter(as.data.frame(df$distribution), mediaType == "text/csv") %>%
+                            select(downloadURL))) %>%
   clean_names() %>%
   mutate(week_ending = as.Date(week_ending, "%m/%d/%y"))
 glimpse(nurs_home)
 
 ma_nurs_home <-
   nurs_home %>% filter(provider_state == "MA")
-
-ma_nurs_home %>%
-  filter(str_detect(provider_name, str_to_upper("Neville")))
 
 nurs_home_sel <-
   ma_nurs_home %>%
