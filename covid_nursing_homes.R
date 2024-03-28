@@ -5,6 +5,8 @@ library(janitor)
 library(lubridate)
 library(gt)
 library(here)
+library(googledrive)
+library(googlesheets4)
 
 res <- GET(url = "https://data.cms.gov/data.json")
 res
@@ -21,37 +23,47 @@ tabyl(as.data.frame(df$distribution)$mediaType)
 filter(as.data.frame(df$distribution), mediaType == "text/csv") %>%
   select(downloadURL)
 
-nurs_home <-
-  read_csv(file = 
+# create file that eventually goes to Drive and modified for table
+forDrive <- read_csv(file = 
              as.character(filter(as.data.frame(df$distribution), mediaType == "text/csv") %>%
-                            select(downloadURL))) %>%
+                            select(downloadURL))) %>% 
+  mutate(`Week Ending` = as.Date(`Week Ending` , "%m/%d/%y")) %>%
+  filter(`Provider Name` == str_to_upper("Cambridge Rehabilitation & Nursing Center") |
+           `Provider Name` == str_to_upper("Sancta Maria Nursing Facility") |
+           str_detect(`Provider Name`, str_to_upper("Neville Center"))) %>%
+  filter(`Week Ending` >= "2024-01-01")
+
+# start with clean auth plate
+gs4_deauth()
+gs4_user()
+
+# get auth
+drive_auth(email = 'dsolet@gmail.com')
+gs4_auth(token = drive_token())
+
+gs4_create('COVID Nursing Home Data' , sheets = list(forDrive))
+drive_mv(file = as_id(drive_find(pattern = 'COVID Nursing Home Data' , n_max = 1)) , 
+       path = as_id('https://drive.google.com/drive/u/0/folders/1mN2Fl-WbB1nGZbvF-ccoVbBrR8WgPu1C'))
+         
+# start and end dates for table  
+start_date <- 
+  format(min(forDrive$`Week Ending`) , '%B %d, %Y')
+end_date <- 
+  format(max(forDrive$`Week Ending`) , '%B %d, %Y')
+
+# Make the table
+forDrive %>%
   clean_names() %>%
-  mutate(week_ending = as.Date(week_ending, "%m/%d/%y"))
-glimpse(nurs_home)
-
-ma_nurs_home <-
-  nurs_home %>% filter(provider_state == "MA")
-
-nurs_home_sel <-
-  ma_nurs_home %>%
-  filter(provider_name == str_to_upper("Cambridge Rehabilitation & Nursing Center") |
-    provider_name == str_to_upper("Sancta Maria Nursing Facility") |
-    str_detect(provider_name, str_to_upper("Neville Center"))) %>%
-  filter(week_ending >= "2024-01-01") %>%
   select(
     week_ending, provider_name, residents_weekly_confirmed_covid_19,
     percentage_of_current_residents_up_to_date_with_covid_19_vaccines,
     percentage_of_current_healthcare_personnel_up_to_date_with_covid_19_vaccines,
-    staff_weekly_confirmed_covid_19, submitted_data,
-    passed_quality_assurance_check
-  )
-
-nurs_home_sel %>%
-  select(-submitted_data, -passed_quality_assurance_check) %>%
-  gt(.) %>%
+    staff_weekly_confirmed_covid_19) %>%
+    gt(.) %>%
   tab_header(
     title = html("COVID cases and vaccination levels at <br>selected Cambridge nursing facilities"),
-    subtitle = "Weeks ending January 7, 2024 through March 10, 2024"
+    subtitle = 
+      sprintf("Weeks ending %s through %s" , start_date , end_date)
   ) %>%
   cols_label(
     week_ending = "Week ending",
@@ -70,6 +82,8 @@ nurs_home_sel %>%
     str_detect(provider_name, str_to_upper("Neville"))
   ) %>%
   cols_hide(provider_name) %>%
+  tab_source_note(source_note = "Source: COVID-19 Nursing Home Data , Centers for Disease Control
+                  and Prevention") %>%
   tab_footnote(
     footnote = "Resident COVID cases is the number of laboratory-confirmed
   new COVID cases for the week in residents.",
@@ -90,6 +104,8 @@ nurs_home_sel %>%
                new COVID cases for the week in staff and facility personnel.",
     locations = cells_column_labels((columns <- 6))
   ) %>%
-  tab_source_note(source_note = "Source: COVID-19 Nursing Home Data , Centers for Disease Control
-                  and Prevention, March 10, 2024") %>%
-  gtsave(filename = "COVID_round_1a.pdf")
+  gtsave(filename = "COVID_round_1b.pdf")
+
+drive_upload(media = 'COVID_round_1b.pdf' , 
+             path = as_id('https://drive.google.com/drive/u/0/folders/1mN2Fl-WbB1nGZbvF-ccoVbBrR8WgPu1C') , 
+             overwrite = TRUE)
