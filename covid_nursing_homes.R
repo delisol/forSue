@@ -1,6 +1,8 @@
 # covid_nursing_homes.R
-# creates a dataset of selected providers from
-# the CMS COVID-19 Nursing Home Data
+# This file:
+#   DOWNLOAD DATA FILE FROM CMS for selected dates and providers
+#   UPLOAD DATA FILE TO GOOGLE DRIVE
+#   CREATE AND UPLOAD PDF TABLE OF SELECTED COLUMNS
 
 # packages needed
 library(here)
@@ -14,6 +16,7 @@ library(googledrive)
 library(googlesheets4)
 # end packages needed
 
+############### DOWNLOAD AND CURATE DATA FILE FROM CMS ############### 
 # check that the CMS API is valid
 res <- GET(url = "https://data.cms.gov/data.json")
 res # code 200 means it's ok
@@ -24,32 +27,26 @@ names(toc)
 # select the dataset we want
 df <- as.data.frame(toc$dataset) %>%
   filter(title == "COVID-19 Nursing Home Data")
-glimpse(df)
-
-# look at file structures
-glimpse(as.data.frame(df$distribution))
-glimpse(as.data.frame(df$distribution)$description)
-tabyl(as.data.frame(df$distribution)$mediaType)
+names(df)
 
 # identify download url
-filter(as.data.frame(df$distribution), mediaType == "text/csv") %>%
+url <- filter(as.data.frame(df$distribution), mediaType == "text/csv") %>%
   select(downloadURL)
-
-# create updated file that is uploaded to Drive
-#   (and then is modified to create PDF table)
+url
 
 # read COVID Nursing Home csv file using API, filter to desired dates and providers
 forDrive <- read_csv(
   file =
-    as.character(filter(as.data.frame(df$distribution), mediaType == "text/csv") %>%
-      select(downloadURL))
+    as.character(url) , show_col_types = FALSE
 ) %>%
   mutate(`Week Ending` = as.Date(`Week Ending`, "%m/%d/%y")) %>%
   filter(`Provider Name` == str_to_upper("Cambridge Rehabilitation & Nursing Center") |
     `Provider Name` == str_to_upper("Sancta Maria Nursing Facility") |
     str_detect(`Provider Name`, str_to_upper("Neville Center"))) %>%
   filter(`Week Ending` >= "2024-01-01")
+############### END DOWNLOAD AND CURATE DATA FILE FROM CMS ###############
 
+############### UPLOAD DATA FILE TO GOOGLE DRIVE ###############
 # Interact with Google Drive
 # Authorize connection: start with clean authorization slate
 gs4_deauth()
@@ -68,8 +65,9 @@ drive_mv(
   overwrite = TRUE
 )
 # dataset is now uploaded
+############### END UPLOAD TO GOOGLE DRIVE ###############
 
-######### PDF table ################
+############### CREATE AND UPLOAD PDF TABLE OF SELECTED COLUMNS ###############
 # define start and end dates for use in PDF table title
 start_date <-
   format(min(forDrive$`Week Ending`), "%B %d, %Y")
@@ -138,3 +136,4 @@ drive_upload(
   path = as_id("https://drive.google.com/drive/u/0/folders/1mN2Fl-WbB1nGZbvF-ccoVbBrR8WgPu1C"),
   overwrite = TRUE
 )
+############### END CREATE AND UPLOAD PDF TABLE ###############
