@@ -14,20 +14,20 @@ library(googledrive)
 library(googlesheets4)
 # end packages needed
 
-# check that the CMS API is working
+# check that the CMS API is valid
 res <- GET(url = "https://data.cms.gov/data.json")
 res # code 200 means it's ok
 
-# CMS table of contents for datasets
+# Table of contents for CMS datasets
 toc <- fromJSON(rawToChar(res$content))
 names(toc)
-# select the one we want
+# select the dataset we want
 df <- as.data.frame(toc$dataset) %>%
   filter(title == "COVID-19 Nursing Home Data")
 glimpse(df)
 
 # look at file structures
-colnames(as.data.frame(df$distribution))
+glimpse(as.data.frame(df$distribution))
 glimpse(as.data.frame(df$distribution)$description)
 tabyl(as.data.frame(df$distribution)$mediaType)
 
@@ -51,7 +51,7 @@ forDrive <- read_csv(
   filter(`Week Ending` >= "2024-01-01")
 
 # Interact with Google Drive
-# start with clean authorization plate
+# Authorize connection: start with clean authorization slate
 gs4_deauth()
 gs4_user()
 
@@ -61,6 +61,7 @@ gs4_auth(token = drive_token())
 
 # upload forDrive dataset to Drive and move it to desired location
 gs4_create("COVID Nursing Home Data", sheets = list(forDrive))
+# for path = as_id, insert url for the destination folder
 drive_mv(
   file = as_id(drive_find(pattern = "COVID Nursing Home Data", n_max = 1)),
   path = as_id("https://drive.google.com/drive/u/0/folders/1mN2Fl-WbB1nGZbvF-ccoVbBrR8WgPu1C"),
@@ -68,6 +69,7 @@ drive_mv(
 )
 # dataset is now uploaded
 
+######### PDF table ################
 # define start and end dates for use in PDF table title
 start_date <-
   format(min(forDrive$`Week Ending`), "%B %d, %Y")
@@ -106,8 +108,8 @@ forDrive %>%
     str_detect(provider_name, str_to_upper("Neville"))
   ) %>%
   cols_hide(provider_name) %>%
-  tab_source_note(source_note = "Source: COVID-19 Nursing Home Data , Centers for Disease Control
-                  and Prevention") %>%
+  tab_source_note(source_note = sprintf("Source: COVID-19 Nursing Home Data , Centers for Disease Control
+                  and Prevention, %s", format(as.Date(df$modified), format = "%B %d, %Y"))) %>%
   tab_footnote(
     footnote = "Resident COVID cases is the number of laboratory-confirmed
   new COVID cases for the week in residents.",
