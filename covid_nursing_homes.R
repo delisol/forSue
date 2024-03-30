@@ -16,28 +16,32 @@ library(googledrive)
 library(googlesheets4)
 # end packages needed
 
-############### DOWNLOAD AND CURATE DATA FILE FROM CMS ############### 
+############### DOWNLOAD AND CURATE DATA FILE FROM CMS ###############
 # check that the CMS API is valid
 res <- GET(url = "https://data.cms.gov/data.json")
 res # code 200 means it's ok
 
-# Table of contents for CMS datasets
-toc <- fromJSON(rawToChar(res$content))
-names(toc)
+contents_list <- fromJSON(rawToChar(res$content), flatten = TRUE)
+names(contents_list)
+
 # select the dataset we want
-df <- as.data.frame(toc$dataset) %>%
+df <- contents_list$dataset %>%
   filter(title == "COVID-19 Nursing Home Data")
 names(df)
 
+# retrieve distribution variable and filter to get download info
+dist <- as.data.frame(df$distribution) %>%
+  filter(mediaType == "text/csv")
+
 # identify download url
-url <- filter(as.data.frame(df$distribution), mediaType == "text/csv") %>%
-  select(downloadURL)
+url <- dist$downloadURL
 url
 
-# read COVID Nursing Home csv file using API, filter to desired dates and providers
+# read COVID Nursing Home csv file using download url,
+#   filter to desired dates and providers
 forDrive <- read_csv(
   file =
-    as.character(url) , show_col_types = FALSE
+    as.character(url), show_col_types = FALSE
 ) %>%
   mutate(`Week Ending` = as.Date(`Week Ending`, "%m/%d/%y")) %>%
   filter(`Provider Name` == str_to_upper("Cambridge Rehabilitation & Nursing Center") |
@@ -99,8 +103,14 @@ forDrive %>%
   ) %>%
   cols_align(align = "center", columns = c(2:6)) %>%
   fmt_number(columns = c(4:6), decimals = 0) %>%
-  tab_row_group(label = "Cambridge Rehab & Nursing", str_detect(provider_name, "CAMBRIDGE")) %>%
-  tab_row_group(label = "Sancta Maria", str_detect(provider_name, "SANCTA")) %>%
+  tab_row_group(
+    label = "Cambridge Rehab & Nursing",
+    str_detect(provider_name, "CAMBRIDGE")
+  ) %>%
+  tab_row_group(
+    label = "Sancta Maria",
+    str_detect(provider_name, "SANCTA")
+  ) %>%
   tab_row_group(
     label = "Neville Center at Fresh Pond",
     str_detect(provider_name, str_to_upper("Neville"))
@@ -110,7 +120,7 @@ forDrive %>%
                   and Prevention, %s", format(as.Date(df$modified), format = "%B %d, %Y"))) %>%
   tab_footnote(
     footnote = "Resident COVID cases is the number of laboratory-confirmed
-  new COVID cases for the week in residents.",
+                new COVID cases for the week in residents.",
     locations = cells_column_labels(columns = 3)
   ) %>%
   tab_footnote(
@@ -120,7 +130,7 @@ forDrive %>%
   ) %>%
   tab_footnote(
     footnote = "Vaccinated health care personnel is the percentage of
-  health care personnel  who are up to date with COVID vaccines.",
+                health care personnel  who are up to date with COVID vaccines.",
     locations = cells_column_labels(columns = 5)
   ) %>%
   tab_footnote(
