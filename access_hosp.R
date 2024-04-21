@@ -1,5 +1,5 @@
 # access_hosp.R
-# retrieves COVID-19 Reported Patient Impact and Hospital Capacity by Facility -- RAW file
+# retrieves COVID-19 Reported Patient Impact and Hospital Capacity by Facility
 # Source is HHS
 # Documentation
 #   https://healthdata.gov/Hospital/COVID-19-Reported-Patient-Impact-and-Hospital-Capa/uqq2-txqb/about_data
@@ -15,6 +15,9 @@ library(jsonlite)
 library(dplyr)
 library(googledrive)
 library(googlesheets4)
+library(tidyverse)
+
+# USER-DEFINED FUNCTIONS
 
 # Function to retrieve all data
 retrieve_all_data <- function(url) {
@@ -54,16 +57,57 @@ retrieve_all_data <- function(url) {
   return(combined_data)
 }
 
+# function to select columns, 
+# make column names pretty and 
+# and include only non-empty columns from the selection
+selCols <- function(data) {
+    select(data , 
+         collection_week , 
+         all_adult_hospital_inpatient_beds_7_day_avg , 
+         all_adult_hospital_inpatient_bed_occupied_7_day_avg ,
+         total_icu_beds_7_day_avg , 
+         staffed_adult_icu_bed_occupancy_7_day_avg , 
+         ends_with('_sum'))
+}
+
+# clean items
+cleanIt <- function(data) {
+    separate_wider_delim(data , cols = collection_week , delim = 'T' , # clean date-time column
+                         names = c('collection_week' , NA) , 
+                         cols_remove = TRUE)
+}
+
+# make pretty column names for Sheets
+prettyIt <- function(data) { 
+    rename_with(data , ~ str_to_sentence(gsub('_' , ' ' , .x , fixed = TRUE))) %>%
+    rename_with(. , ~ gsub(' ed ' , ' ED ' , .x , fixed = TRUE)) %>%
+    rename_with(. , ~ gsub('icu' , ignore.case = TRUE , 'ICU' , .x)) %>%
+    rename_with(. , ~ gsub('covid' , 'COVID' , .x , fixed = TRUE)) %>%
+    rename_with(. , ~ gsub('0 ' , '0-' , .x , fixed = TRUE)) %>%
+    rename_with(. , ~ gsub('18 19' , '18-19' , .x , fixed = TRUE)) %>%
+    rename_with(. , ~ gsub('12 17' , '12-17' , .x , fixed = TRUE)) %>%
+    rename_with(. , ~ gsub('5 11' , '5-11' , .x , fixed = TRUE)) %>%
+    select_if(~ !all(is.na(.)))
+}
+
+# END USER-DEFINED FUNCTIONS
+
 # API endpoint (SODA 2.1)
 # note filter to Massachusetts in url
 url <- "https://healthdata.gov/resource/anag-cw7u.json?state=MA"
 
 # Retrieve all data
 patientImpact_MA <- retrieve_all_data(url)
-colnames(patientImpact_MA)
-CamHlthAll <- filter(patientImpact_MA , hospital_name == 'CAMBRIDGE HEALTH ALLIANCE')
-MtAub <- filter(patientImpact_MA , hospital_name == 'MOUNT AUBURN HOSPITAL')
+# filter to hospitals with selected non-empty columns 
+CamHlthAll <- 
+  filter(patientImpact_MA , hospital_name == 'CAMBRIDGE HEALTH ALLIANCE') %>%
+  selCols() %>%
+  cleanIt()
 
+MtAub <- 
+  filter(patientImpact_MA , hospital_name == 'MOUNT AUBURN HOSPITAL') %>%
+  selCols() %>%
+  cleanIt()
 
 ############### UPLOAD DATA FILE TO GOOGLE DRIVE ###############
 # Interact with Google Drive
@@ -76,19 +120,21 @@ drive_auth(email = "dsolet@gmail.com")
 gs4_auth(token = drive_token())
 
 # upload hospital datasets to Drive and move it to desired location
-# Cambridge Health Alliance
-gs4_create("Patient impact Cambridge Health All", sheets = list(CamHlthAll %>% select(-geocoded_hospital_address)))
+gs4_create("Patient impact Selected Hospitals", sheets = list(CamHlthAll  %>%
+                                                                prettyIt() , 
+                                                              MtAub %>% 
+                                                              prettyIt())) %>%
+  sheet_rename(1 , new_name = 'Camb_Hlth_All') %>%
+  sheet_rename(2 , new_name = 'Mt_Aub')
+
+
+
+
 # for path = as_id, insert url for the destination folder
 drive_mv(
-  file = as_id(drive_find(pattern = "Patient impact Cambridge Health All", n_max = 1)),
+  file = as_id(drive_find(pattern = "Patient impact Selected Hospitals", n_max = 1)),
   path = as_id("https://drive.google.com/drive/u/0/folders/1mN2Fl-WbB1nGZbvF-ccoVbBrR8WgPu1C"),
   overwrite = TRUE
 )
 
-gs4_create("Patient impact Mount Auburn Hospital", sheets = list(MtAub %>% select(-geocoded_hospital_address)))
-# for path = as_id, insert url for the destination folder
-drive_mv(
-  file = as_id(drive_find(pattern = "Patient impact Mount Auburn Hospital", n_max = 1)),
-  path = as_id("https://drive.google.com/drive/u/0/folders/1mN2Fl-WbB1nGZbvF-ccoVbBrR8WgPu1C"),
-  overwrite = TRUE
-)
+#  mutate_all(data , ~ ifelse(. == '-999999', 'NA' , .)) %>% # missing value
