@@ -58,8 +58,6 @@ retrieve_all_data <- function(url) {
 }
 
 # function to select columns, 
-# make column names pretty and 
-# and include only non-empty columns from the selection
 selCols <- function(data) {
     select(data , 
          collection_week , 
@@ -74,7 +72,9 @@ selCols <- function(data) {
 cleanIt <- function(data) {
     separate_wider_delim(data , cols = collection_week , delim = 'T' , # clean date-time column
                          names = c('collection_week' , NA) , 
-                         cols_remove = TRUE)
+                         cols_remove = TRUE) %>%
+    mutate_all(. , ~ ifelse(. == '-999999', '<4' , .)) %>%
+    arrange(desc(collection_week))
 }
 
 # make pretty column names for Sheets
@@ -103,6 +103,7 @@ CamHlthAll <-
   filter(patientImpact_MA , hospital_name == 'CAMBRIDGE HEALTH ALLIANCE') %>%
   selCols() %>%
   cleanIt()
+  
 
 MtAub <- 
   filter(patientImpact_MA , hospital_name == 'MOUNT AUBURN HOSPITAL') %>%
@@ -136,5 +137,3 @@ drive_mv(
   path = as_id("https://drive.google.com/drive/u/0/folders/1mN2Fl-WbB1nGZbvF-ccoVbBrR8WgPu1C"),
   overwrite = TRUE
 )
-
-#  mutate_all(data , ~ ifelse(. == '-999999', 'NA' , .)) %>% # missing value
