@@ -104,7 +104,6 @@ CamHlthAll <-
   selCols() %>%
   cleanIt()
   
-
 MtAub <- 
   filter(patientImpact_MA , hospital_name == 'MOUNT AUBURN HOSPITAL') %>%
   selCols() %>%
